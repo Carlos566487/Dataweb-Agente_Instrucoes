@@ -24,7 +24,7 @@ function assertEnv(): { endpoint: string; agentId: string; apiKey?: string } {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Instanciação do client com suporte a TokenCredential (DefaultAzureCredential ou API Key wrapper).
+// Instanciação do client com suporte a TokenCredential e Injeção do header api-key.
 // ──────────────────────────────────────────────────────────────────────────────
 function buildClient(endpoint: string, apiKey?: string): AgentsClient {
   if (apiKey) {
@@ -34,7 +34,22 @@ function buildClient(endpoint: string, apiKey?: string): AgentsClient {
         expiresOnTimestamp: Date.now() + 3600 * 1000,
       }),
     };
-    return new AgentsClient(endpoint, keyCredential);
+    const client = new AgentsClient(endpoint, keyCredential);
+    
+    // Injeta o cabeçalho 'api-key' exigido pelo Azure AI Foundry e remove o 'Authorization: Bearer'
+    client.pipeline.addPolicy(
+      {
+        name: "InjectApiKeyPolicy",
+        sendRequest: (req, next) => {
+          req.headers.set("api-key", apiKey);
+          req.headers.delete("authorization");
+          req.headers.delete("Authorization");
+          return next(req);
+        },
+      },
+      { phase: "Sign" }
+    );
+    return client;
   }
   return new AgentsClient(endpoint, new DefaultAzureCredential());
 }
@@ -70,11 +85,11 @@ async function extractReply(
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Mapeamento de erros do SDK → resposta HTTP sem vazar detalhes internos
+// Mapeamento de erros do SDK → resposta HTTP sem vazar detalhes sensíveis
 // ──────────────────────────────────────────────────────────────────────────────
 function handleSdkError(error: unknown): NextResponse {
   const msg = error instanceof Error ? error.message : String(error);
-  console.error("[/api/chat] Erro Azure SDK:", msg);
+  console.error("[/api/chat] Erro Azure SDK:", error);
 
   if (msg.includes("429")) {
     return NextResponse.json(
@@ -90,13 +105,13 @@ function handleSdkError(error: unknown): NextResponse {
   }
   if (msg.includes("401") || msg.includes("403")) {
     return NextResponse.json(
-      { error: "Erro de autenticação com o serviço de IA. Contate o administrador." },
+      { error: "Erro de autenticação com o serviço de IA. Verifique as credenciais no Netlify." },
       { status: 503 }
     );
   }
 
   return NextResponse.json(
-    { error: "Erro ao processar sua mensagem. Tente novamente." },
+    { error: `Erro ao processar sua mensagem: ${msg}` },
     { status: 500 }
   );
 }
@@ -160,7 +175,7 @@ export async function POST(request: NextRequest) {
     if (run.status === "failed") {
       console.error("[/api/chat] Run falhou:", run.lastError);
       return NextResponse.json(
-        { error: "O agente encontrou um erro ao processar sua mensagem. Tente novamente." },
+        { error: `O agente encontrou um erro ao processar sua mensagem: ${run.lastError?.message ?? 'Falha na execução'}` },
         { status: 500 }
       );
     }

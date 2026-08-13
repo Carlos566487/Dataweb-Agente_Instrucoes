@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { AgentsClient } from "@azure/ai-agents";
 import type { MessageTextContent } from "@azure/ai-agents";
-import { DefaultAzureCredential } from "@azure/identity";
+import { AzureKeyCredential } from "@azure/core-auth";
 import { z } from "zod";
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -10,24 +10,25 @@ import { z } from "zod";
 // ──────────────────────────────────────────────────────────────────────────────
 const ENDPOINT = process.env.AZURE_AI_PROJECT_ENDPOINT;
 const AGENT_ID = process.env.AZURE_AI_AGENT_ID;
+const API_KEY  = process.env.AZURE_AI_API_KEY;
 
 /** Valida que as variáveis obrigatórias estão presentes. */
-function assertEnv(): { endpoint: string; agentId: string } {
-  if (!ENDPOINT || !AGENT_ID) {
+function assertEnv(): { endpoint: string; agentId: string; apiKey: string } {
+  if (!ENDPOINT || !AGENT_ID || !API_KEY) {
     throw new Error(
-      "Variáveis de ambiente ausentes: AZURE_AI_PROJECT_ENDPOINT, AZURE_AI_AGENT_ID"
+      "Variáveis de ambiente ausentes: AZURE_AI_PROJECT_ENDPOINT, AZURE_AI_AGENT_ID, AZURE_AI_API_KEY"
     );
   }
-  return { endpoint: ENDPOINT, agentId: AGENT_ID };
+  return { endpoint: ENDPOINT, agentId: AGENT_ID, apiKey: API_KEY };
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Credencial — Agents Service EXIGE autenticação Entra ID (RBAC).
-// Chaves de API não têm permissão para acessar 'workspaces/agents/action'.
+// Credencial — AzureKeyCredential (API Key) compatível com Netlify/Vercel.
+// Utiliza a chave de API do Azure AI Foundry configurada nas env vars.
 // ──────────────────────────────────────────────────────────────────────────────
-/** Cria um AgentsClient instanciado com DefaultAzureCredential. */
-function buildClient(endpoint: string): AgentsClient {
-  return new AgentsClient(endpoint, new DefaultAzureCredential());
+/** Cria um AgentsClient autenticado via API Key. */
+function buildClient(endpoint: string, apiKey: string): AgentsClient {
+  return new AgentsClient(endpoint, new AzureKeyCredential(apiKey));
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -145,7 +146,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const client = buildClient(env.endpoint);
+  const client = buildClient(env.endpoint, env.apiKey);
 
   try {
     // 3. Criar ou reutilizar thread (mantém contexto da conversa)

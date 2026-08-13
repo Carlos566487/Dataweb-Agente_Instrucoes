@@ -73,6 +73,15 @@ function handleSdkError(error: unknown): NextResponse {
   const msg = error instanceof Error ? error.message : String(error);
   console.error("[/api/chat] Erro Azure SDK:", error);
 
+  if (msg.includes("ChainedTokenCredential") || msg.includes("CredentialUnavailableError")) {
+    return NextResponse.json(
+      {
+        error:
+          "Configuração de autenticação pendente no Netlify: Por favor, adicione as variáveis AZURE_TENANT_ID, AZURE_CLIENT_ID e AZURE_CLIENT_SECRET nas configurações do Netlify.",
+      },
+      { status: 503 }
+    );
+  }
   if (msg.includes("429")) {
     return NextResponse.json(
       { error: "Muitas requisições simultâneas. Aguarde alguns segundos e tente novamente." },
@@ -89,8 +98,7 @@ function handleSdkError(error: unknown): NextResponse {
     return NextResponse.json(
       {
         error:
-          "Erro de permissão no Azure: O Agent Service exige permissão Entra ID (RBAC) com a role 'Azure AI Developer'. Configure AZURE_TENANT_ID, AZURE_CLIENT_ID e AZURE_CLIENT_SECRET no Netlify.",
-        details: msg,
+          "Erro de permissão no Azure: Verifique se o Service Principal possui a role 'Azure AI Developer' atribuída ao recurso.",
       },
       { status: 503 }
     );

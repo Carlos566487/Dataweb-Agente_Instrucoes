@@ -1,0 +1,24 @@
+# Configuração Netlify — Dataweb Chat
+# Referência: https://docs.netlify.com/configure-builds/file-based-configuration/
+
+[build]
+  # Base directory onde está o projeto Next.js
+  base    = "apps/dataweb-chat"
+  # Comando de build
+  command = "npm run build"
+  # Pasta de output do Next.js (gerado pelo plugin @netlify/plugin-nextjs)
+  publish = ".next"
+
+# Plugin oficial da Netlify para Next.js (SSR, API Routes, Image Optimization)
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+# Variáveis de ambiente necessárias (configure os valores no painel da Netlify)
+# Acesse: Site settings > Environment variables
+# AZURE_AI_PROJECT_ENDPOINT = <seu-endpoint>
+# AZURE_AI_AGENT_ID         = Dataweb-Instrucoes
+# AZURE_AI_API_KEY          = <sua-chave>
+
+[build.environment]
+  NODE_VERSION = "18"
+  NPM_VERSION  = "10"

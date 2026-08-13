@@ -1,55 +1,37 @@
 import { NextRequest, NextResponse } from "next/server";
 import { AgentsClient } from "@azure/ai-agents";
 import type { MessageTextContent } from "@azure/ai-agents";
-import { DefaultAzureCredential } from "@azure/identity";
-import { TokenCredential } from "@azure/core-auth";
+import { DefaultAzureCredential, ClientSecretCredential } from "@azure/identity";
 import { z } from "zod";
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Configuração — variáveis lidas APENAS no servidor.
 // NUNCA usar NEXT_PUBLIC_* para segredos.
 // ──────────────────────────────────────────────────────────────────────────────
-const ENDPOINT = process.env.AZURE_AI_PROJECT_ENDPOINT;
-const AGENT_ID = process.env.AZURE_AI_AGENT_ID;
-const API_KEY  = process.env.AZURE_AI_API_KEY;
+const ENDPOINT      = process.env.AZURE_AI_PROJECT_ENDPOINT;
+const AGENT_ID      = process.env.AZURE_AI_AGENT_ID;
+const TENANT_ID     = process.env.AZURE_TENANT_ID;
+const CLIENT_ID     = process.env.AZURE_CLIENT_ID;
+const CLIENT_SECRET = process.env.AZURE_CLIENT_SECRET;
 
 /** Valida que as variáveis obrigatórias estão presentes. */
-function assertEnv(): { endpoint: string; agentId: string; apiKey?: string } {
+function assertEnv(): { endpoint: string; agentId: string } {
   if (!ENDPOINT || !AGENT_ID) {
     throw new Error(
       "Variáveis de ambiente ausentes: AZURE_AI_PROJECT_ENDPOINT, AZURE_AI_AGENT_ID"
     );
   }
-  return { endpoint: ENDPOINT, agentId: AGENT_ID, apiKey: API_KEY };
+  return { endpoint: ENDPOINT, agentId: AGENT_ID };
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Instanciação do client com suporte a TokenCredential e Injeção do header api-key.
+// Instanciação do AgentsClient autenticado via Entra ID (RBAC).
+// Suporta Service Principal (TENANT_ID, CLIENT_ID, CLIENT_SECRET) ou DefaultAzureCredential.
 // ──────────────────────────────────────────────────────────────────────────────
-function buildClient(endpoint: string, apiKey?: string): AgentsClient {
-  if (apiKey) {
-    const keyCredential: TokenCredential = {
-      getToken: async () => ({
-        token: apiKey,
-        expiresOnTimestamp: Date.now() + 3600 * 1000,
-      }),
-    };
-    const client = new AgentsClient(endpoint, keyCredential);
-    
-    // Injeta o cabeçalho 'api-key' exigido pelo Azure AI Foundry e remove o 'Authorization: Bearer'
-    client.pipeline.addPolicy(
-      {
-        name: "InjectApiKeyPolicy",
-        sendRequest: (req, next) => {
-          req.headers.set("api-key", apiKey);
-          req.headers.delete("authorization");
-          req.headers.delete("Authorization");
-          return next(req);
-        },
-      },
-      { phase: "Sign" }
-    );
-    return client;
+function buildClient(endpoint: string): AgentsClient {
+  if (TENANT_ID && CLIENT_ID && CLIENT_SECRET) {
+    const credential = new ClientSecretCredential(TENANT_ID, CLIENT_ID, CLIENT_SECRET);
+    return new AgentsClient(endpoint, credential);
   }
   return new AgentsClient(endpoint, new DefaultAzureCredential());
 }
@@ -85,7 +67,7 @@ async function extractReply(
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Mapeamento de erros do SDK → resposta HTTP sem vazar detalhes sensíveis
+// Mapeamento de erros do SDK → resposta HTTP
 // ──────────────────────────────────────────────────────────────────────────────
 function handleSdkError(error: unknown): NextResponse {
   const msg = error instanceof Error ? error.message : String(error);
@@ -103,9 +85,13 @@ function handleSdkError(error: unknown): NextResponse {
       { status: 404 }
     );
   }
-  if (msg.includes("401") || msg.includes("403")) {
+  if (msg.includes("401") || msg.includes("403") || msg.includes("does not have permissions")) {
     return NextResponse.json(
-      { error: "Erro de autenticação com o serviço de IA. Verifique as credenciais no Netlify." },
+      {
+        error:
+          "Erro de permissão no Azure: O Agent Service exige permissão Entra ID (RBAC) com a role 'Azure AI Developer'. Configure AZURE_TENANT_ID, AZURE_CLIENT_ID e AZURE_CLIENT_SECRET no Netlify.",
+        details: msg,
+      },
       { status: 503 }
     );
   }
@@ -152,7 +138,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const client = buildClient(env.endpoint, env.apiKey);
+  const client = buildClient(env.endpoint);
 
   try {
     // 3. Criar ou reutilizar thread (mantém contexto da conversa)

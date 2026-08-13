@@ -1,51 +1,57 @@
 import { NextRequest, NextResponse } from "next/server";
 import { AgentsClient } from "@azure/ai-agents";
 import type { MessageTextContent } from "@azure/ai-agents";
-import { AzureKeyCredential } from "@azure/core-auth";
+import { DefaultAzureCredential } from "@azure/identity";
+import { TokenCredential } from "@azure/core-auth";
 import { z } from "zod";
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Configuração — variáveis lidas APENAS no servidor.
-// NUNCA usar NEXT_PUBLIC_* para segredos (skill seguranca-api).
+// NUNCA usar NEXT_PUBLIC_* para segredos.
 // ──────────────────────────────────────────────────────────────────────────────
 const ENDPOINT = process.env.AZURE_AI_PROJECT_ENDPOINT;
 const AGENT_ID = process.env.AZURE_AI_AGENT_ID;
 const API_KEY  = process.env.AZURE_AI_API_KEY;
 
 /** Valida que as variáveis obrigatórias estão presentes. */
-function assertEnv(): { endpoint: string; agentId: string; apiKey: string } {
-  if (!ENDPOINT || !AGENT_ID || !API_KEY) {
+function assertEnv(): { endpoint: string; agentId: string; apiKey?: string } {
+  if (!ENDPOINT || !AGENT_ID) {
     throw new Error(
-      "Variáveis de ambiente ausentes: AZURE_AI_PROJECT_ENDPOINT, AZURE_AI_AGENT_ID, AZURE_AI_API_KEY"
+      "Variáveis de ambiente ausentes: AZURE_AI_PROJECT_ENDPOINT, AZURE_AI_AGENT_ID"
     );
   }
   return { endpoint: ENDPOINT, agentId: AGENT_ID, apiKey: API_KEY };
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Credencial — AzureKeyCredential (API Key) compatível com Netlify/Vercel.
-// Utiliza a chave de API do Azure AI Foundry configurada nas env vars.
+// Instanciação do client com suporte a TokenCredential (DefaultAzureCredential ou API Key wrapper).
 // ──────────────────────────────────────────────────────────────────────────────
-/** Cria um AgentsClient autenticado via API Key. */
-function buildClient(endpoint: string, apiKey: string): AgentsClient {
-  return new AgentsClient(endpoint, new AzureKeyCredential(apiKey));
+function buildClient(endpoint: string, apiKey?: string): AgentsClient {
+  if (apiKey) {
+    const keyCredential: TokenCredential = {
+      getToken: async () => ({
+        token: apiKey,
+        expiresOnTimestamp: Date.now() + 3600 * 1000,
+      }),
+    };
+    return new AgentsClient(endpoint, keyCredential);
+  }
+  return new AgentsClient(endpoint, new DefaultAzureCredential());
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Schema Zod — rejeita campos extras (seguranca-api: whitelist)
+// Schema Zod — rejeita campos extras (whitelist)
 // ──────────────────────────────────────────────────────────────────────────────
 const ChatRequestSchema = z
   .object({
     message: z.string().min(1, "Mensagem não pode ser vazia.").max(4000),
     threadId: z.string().nullable().optional(),
   })
-  .strict(); // Rejeita campos não declarados
+  .strict();
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Extrai o texto da resposta mais recente do agente.
-// messages.list() retorna do mais recente para o mais antigo —
-// o primeiro item com role="assistant" é a última resposta do agente.
-// (gotcha documentado na skill azure-ai-foundry-agent §7)
+// client.messages.list() retorna do mais recente para o mais antigo.
 // ──────────────────────────────────────────────────────────────────────────────
 async function extractReply(
   client: AgentsClient,
@@ -55,7 +61,6 @@ async function extractReply(
     if (msg.role === "assistant") {
       for (const part of msg.content) {
         if (part.type === "text") {
-          // Cast seguro: type === "text" garante MessageTextContent
           return (part as MessageTextContent).text.value;
         }
       }
@@ -73,30 +78,19 @@ function handleSdkError(error: unknown): NextResponse {
 
   if (msg.includes("429")) {
     return NextResponse.json(
-      {
-        error:
-          "Muitas requisições simultâneas. Aguarde alguns segundos e tente novamente.",
-      },
+      { error: "Muitas requisições simultâneas. Aguarde alguns segundos e tente novamente." },
       { status: 429 }
     );
   }
   if (msg.includes("404")) {
-    // Thread expirou: cliente deve descartar o threadId salvo
     return NextResponse.json(
-      {
-        error:
-          "Sessão expirada. Recarregue a página para iniciar uma nova conversa.",
-        code: "THREAD_NOT_FOUND",
-      },
+      { error: "Sessão expirada. Recarregue a página para iniciar uma nova conversa.", code: "THREAD_NOT_FOUND" },
       { status: 404 }
     );
   }
   if (msg.includes("401") || msg.includes("403")) {
     return NextResponse.json(
-      {
-        error:
-          "Erro de autenticação com o serviço de IA. Contate o administrador.",
-      },
+      { error: "Erro de autenticação com o serviço de IA. Contate o administrador." },
       { status: 503 }
     );
   }
@@ -138,10 +132,7 @@ export async function POST(request: NextRequest) {
   } catch (e) {
     console.error("[/api/chat] Ambiente não configurado:", e);
     return NextResponse.json(
-      {
-        error:
-          "Serviço de IA não configurado. Verifique as variáveis de ambiente.",
-      },
+      { error: "Serviço de IA não configurado. Verifique as variáveis de ambiente." },
       { status: 503 }
     );
   }
@@ -159,11 +150,9 @@ export async function POST(request: NextRequest) {
     }
 
     // 4. Postar mensagem do usuário no thread
-    //    Assinatura real: messages.create(threadId, role, content)
     await client.messages.create(activeThreadId, "user", message);
 
     // 5. Iniciar run e aguardar conclusão via polling interno do SDK
-    //    runs.createAndPoll retorna PollerLike → aguardar com pollUntilDone()
     const poller = client.runs.createAndPoll(activeThreadId, env.agentId);
     const run = await poller.pollUntilDone();
 
@@ -171,10 +160,7 @@ export async function POST(request: NextRequest) {
     if (run.status === "failed") {
       console.error("[/api/chat] Run falhou:", run.lastError);
       return NextResponse.json(
-        {
-          error:
-            "O agente encontrou um erro ao processar sua mensagem. Tente novamente.",
-        },
+        { error: "O agente encontrou um erro ao processar sua mensagem. Tente novamente." },
         { status: 500 }
       );
     }

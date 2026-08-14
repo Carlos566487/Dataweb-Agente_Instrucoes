@@ -16,8 +16,10 @@
 # Variáveis de ambiente necessárias (configure os valores no painel da Netlify)
 # Acesse: Site settings > Environment variables
 # AZURE_AI_PROJECT_ENDPOINT = <seu-endpoint>
-# AZURE_AI_AGENT_ID         = asst_qbDSoPvT7lEMtLz3KPBye4id
-# AZURE_AI_API_KEY          = <sua-chave>
+# AZURE_AI_AGENT_ID         = Agent223
+# AZURE_TENANT_ID           = <tenant-id-do-service-principal>
+# AZURE_CLIENT_ID           = <client-id-do-service-principal>
+# AZURE_CLIENT_SECRET       = <client-secret-do-service-principal>
 
 [build.environment]
   # Pacotes Azure SDK requerem Node >= 20; usando 22 LTS para compatibilidade máxima

@@ -111,11 +111,50 @@ function handleSdkError(error: unknown): NextResponse {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
+// Rate limiting — em memória para MVP; usar Redis em produção (skill seguranca-api)
+// ──────────────────────────────────────────────────────────────────────────────
+const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minuto
+const RATE_LIMIT_MAX = 20; // máx requisições por janela
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip);
+
+  if (!entry || now > entry.resetAt) {
+    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    return true;
+  }
+
+  if (entry.count >= RATE_LIMIT_MAX) {
+    return false;
+  }
+
+  entry.count++;
+  return true;
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // POST /api/chat
 // Body:     { message: string; threadId?: string | null }
 // Response: { reply: string; threadId: string }
 // ──────────────────────────────────────────────────────────────────────────────
 export async function POST(request: NextRequest) {
+  const startTime = Date.now();
+
+  // 0. Rate limiting
+  const clientIp =
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+    request.headers.get("x-real-ip") ??
+    "unknown";
+
+  if (!checkRateLimit(clientIp)) {
+    return NextResponse.json(
+      { error: "Muitas requisições. Aguarde um momento antes de tentar novamente." },
+      { status: 429 }
+    );
+  }
+
   // 1. Parsear e validar body
   let rawBody: unknown;
   try {
@@ -147,6 +186,7 @@ export async function POST(request: NextRequest) {
   }
 
   const client = buildClient(env.endpoint);
+  console.log("[/api/chat] Usando Endpoint:", env.endpoint);
 
   try {
     // 3. Criar ou reutilizar thread (mantém contexto da conversa)
@@ -183,6 +223,9 @@ export async function POST(request: NextRequest) {
 
     // 7. Extrair e retornar resposta do agente
     const reply = await extractReply(client, activeThreadId);
+
+    const latency = Date.now() - startTime;
+    console.log(`[/api/chat] Resposta gerada em ${latency}ms`);
 
     return NextResponse.json({ reply, threadId: activeThreadId });
   } catch (error: unknown) {

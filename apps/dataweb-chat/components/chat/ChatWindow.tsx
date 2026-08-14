@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { Bot, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { Bot, Trash2, ChevronDown } from "lucide-react";
+import Image from "next/image";
 import { useChat } from "@/hooks/useChat";
 import { MessageBubble } from "./MessageBubble";
 import { InputBox } from "./InputBox";
@@ -42,10 +43,17 @@ function EmptyState() {
     <div className="flex flex-col items-center justify-center h-full gap-8 px-6 text-center animate-slide-up">
       {/* Logo / ícone de marca */}
       <div className="relative group">
-        <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/20 flex items-center justify-center shadow-xl backdrop-blur-sm transition-transform duration-500 group-hover:scale-105 group-hover:shadow-primary/20">
-          <Bot size={42} className="text-primary transition-transform duration-500 group-hover:rotate-12" />
+        <div className="w-40 h-20 rounded-2xl bg-white border border-primary/20 flex items-center justify-center shadow-xl backdrop-blur-sm transition-transform duration-500 group-hover:scale-105 group-hover:shadow-primary/20 p-3 overflow-hidden">
+          <Image 
+            src="/logo-diniz.png" 
+            alt="Óticas Diniz" 
+            width={140} 
+            height={60} 
+            className="object-contain transition-transform duration-500 group-hover:scale-110"
+            priority
+          />
         </div>
-        <div className="absolute -bottom-2 -right-2 w-8 h-8 rounded-full bg-primary flex items-center justify-center shadow-lg border-2 border-background">
+        <div className="absolute -bottom-2 -right-2 w-8 h-8 rounded-full bg-primary flex items-center justify-center shadow-lg border-2 border-background z-10">
           <span className="text-[11px] text-primary-foreground font-bold">IA</span>
         </div>
       </div>
@@ -89,15 +97,32 @@ function EmptyState() {
 /**
  * ChatWindow — container principal do chat.
  * Gerencia scroll automático, lista de mensagens, loading e input.
+ * Inclui FAB de scroll-to-bottom quando o usuário rola para cima.
  */
 export function ChatWindow() {
   const { messages, sendMessage, clearSession, isLoading } = useChat();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLElement>(null);
+  const [showScrollButton, setShowScrollButton] = useState(false);
+
+  /** Verifica se o scroll está perto do fundo */
+  const checkScrollPosition = useCallback(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    const { scrollTop, scrollHeight, clientHeight } = container;
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+    setShowScrollButton(distanceFromBottom > 120);
+  }, []);
+
+  /** Scroll suave até o final */
+  const scrollToBottom = useCallback(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, []);
 
   // Scroll automático para o fim ao receber nova mensagem ou loading
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isLoading]);
+    scrollToBottom();
+  }, [messages, isLoading, scrollToBottom]);
 
   return (
     <div
@@ -109,8 +134,14 @@ export function ChatWindow() {
         <div className="flex items-center gap-4">
           {/* Indicador de status */}
           <div className="relative flex-shrink-0">
-            <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-primary/20 to-transparent border border-primary/20 flex items-center justify-center shadow-sm">
-              <Bot size={22} className="text-primary" />
+            <div className="w-14 h-14 rounded-2xl bg-white border border-primary/20 flex items-center justify-center shadow-sm p-1.5 overflow-hidden">
+              <Image 
+                src="/logo-diniz.png" 
+                alt="Óticas Diniz" 
+                width={48} 
+                height={48} 
+                className="object-contain"
+              />
             </div>
             <div
               className={cn(
@@ -121,9 +152,18 @@ export function ChatWindow() {
           </div>
 
           <div className="flex flex-col justify-center">
-            <h1 className="text-sm font-bold text-foreground leading-tight tracking-tight">
-              Dataweb — Instruções
-            </h1>
+            <div className="flex items-center gap-3">
+              <Image 
+                src="/logo-diniz-3.png" 
+                alt="Logo Diniz" 
+                width={100} 
+                height={40} 
+                className="object-contain rounded-md shadow-sm border border-border/50"
+              />
+              <h1 className="text-base font-bold text-foreground leading-tight tracking-tight">
+                Dataweb — Instruções
+              </h1>
+            </div>
             <p className="text-[11px] text-muted-foreground font-medium mt-0.5">
               {isLoading ? "Processando…" : "Online · Azure AI Foundry"}
             </p>
@@ -146,13 +186,17 @@ export function ChatWindow() {
             )}
           >
             <Trash2 size={14} className="opacity-80" />
-            <span>Nova conversa</span>
+            <span className="hidden sm:inline">Nova conversa</span>
           </button>
         )}
       </header>
 
       {/* ── Área de mensagens ───────────────────────────────────── */}
-      <main className="flex-1 overflow-y-auto scrollbar-thin px-4 md:px-8 lg:px-16 py-8">
+      <main 
+        ref={messagesContainerRef}
+        onScroll={checkScrollPosition}
+        className="flex-1 overflow-y-auto scrollbar-thin px-4 md:px-8 lg:px-16 py-8 relative"
+      >
         {messages.length === 0 && !isLoading ? (
           <EmptyState />
         ) : (
@@ -170,6 +214,19 @@ export function ChatWindow() {
         )}
       </main>
 
+      {/* FAB: Scroll to bottom */}
+      {showScrollButton && (
+        <div className="absolute bottom-[130px] right-8 z-20 animate-fade-in">
+          <button
+            onClick={scrollToBottom}
+            aria-label="Rolar para o final"
+            className="flex items-center justify-center w-10 h-10 rounded-full bg-background/80 backdrop-blur-md border border-border/50 shadow-md text-foreground hover:bg-background transition-all hover:scale-110 active:scale-95"
+          >
+            <ChevronDown size={20} />
+          </button>
+        </div>
+      )}
+
       {/* ── Input ──────────────────────────────────────────────── */}
       <div className="flex-shrink-0 w-full z-10 relative bg-gradient-to-t from-background via-background/95 to-transparent pt-6 pb-2">
         <div className="max-w-3xl mx-auto w-full px-4 md:px-8 lg:px-16">
@@ -179,4 +236,3 @@ export function ChatWindow() {
     </div>
   );
 }
-

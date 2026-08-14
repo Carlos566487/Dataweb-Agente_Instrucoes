@@ -1,8 +1,10 @@
 "use client";
 
-import { useRef, useCallback, KeyboardEvent } from "react";
+import { useRef, useCallback, useState, KeyboardEvent } from "react";
 import { Send, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+const MAX_CHARS = 4000;
 
 interface InputBoxProps {
   onSend: (message: string) => void;
@@ -16,26 +18,30 @@ interface InputBoxProps {
  * - Shift+Enter: insere quebra de linha
  * - Auto-resize até 5 linhas
  * - Desabilitado durante loading
+ * - Indicador de caracteres (máx 4000)
  */
 export function InputBox({ onSend, isLoading, disabled }: InputBoxProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [charCount, setCharCount] = useState(0);
 
-  /** Ajusta altura do textarea ao conteúdo (máx ~5 linhas) */
+  /** Ajusta altura do textarea ao conteúdo (máx ~5 linhas) e atualiza contador */
   const autoResize = useCallback(() => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
+    setCharCount(el.value.length);
   }, []);
 
   const handleSend = useCallback(() => {
     const el = textareaRef.current;
     if (!el) return;
     const value = el.value.trim();
-    if (!value || isLoading || disabled) return;
+    if (!value || isLoading || disabled || value.length > MAX_CHARS) return;
     onSend(value);
     el.value = "";
     el.style.height = "auto";
+    setCharCount(0);
   }, [onSend, isLoading, disabled]);
 
   const handleKeyDown = useCallback(
@@ -49,6 +55,7 @@ export function InputBox({ onSend, isLoading, disabled }: InputBoxProps) {
   );
 
   const isDisabled = isLoading || disabled;
+  const isOverLimit = charCount > MAX_CHARS;
 
   return (
     <div className="bg-transparent p-2 md:p-4 pb-4">
@@ -57,7 +64,8 @@ export function InputBox({ onSend, isLoading, disabled }: InputBoxProps) {
           "flex items-end gap-3 rounded-[24px] border border-border/60 bg-card/80 backdrop-blur-xl",
           "px-4 py-3 shadow-lg transition-all duration-300",
           "focus-within:border-primary/50 focus-within:shadow-[0_4px_24px_-4px_hsl(var(--primary)/0.15)] focus-within:-translate-y-0.5",
-          isDisabled && "opacity-60"
+          isDisabled && "opacity-60",
+          isOverLimit && "border-destructive/50"
         )}
       >
         {/* Textarea auto-resize */}
@@ -65,6 +73,7 @@ export function InputBox({ onSend, isLoading, disabled }: InputBoxProps) {
           ref={textareaRef}
           id="chat-input"
           rows={1}
+          maxLength={MAX_CHARS + 100} // Soft limit — Zod valida no backend
           placeholder={
             isLoading
               ? "Aguardando resposta do agente…"
@@ -86,7 +95,7 @@ export function InputBox({ onSend, isLoading, disabled }: InputBoxProps) {
           id="chat-send-button"
           type="button"
           onClick={handleSend}
-          disabled={isDisabled}
+          disabled={isDisabled || isOverLimit}
           aria-label="Enviar mensagem"
           className={cn(
             "flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-2xl",
@@ -106,9 +115,27 @@ export function InputBox({ onSend, isLoading, disabled }: InputBoxProps) {
         </button>
       </div>
 
-      <p className="mt-3 text-center text-[11px] font-medium text-muted-foreground/60 transition-opacity hover:text-muted-foreground">
-        Dataweb IA pode cometer erros. Verifique informações importantes.
-      </p>
+      {/* Contador de caracteres + disclaimer */}
+      <div className="flex items-center justify-between mt-3 px-2">
+        <p className="text-[11px] font-medium text-muted-foreground/60 transition-opacity hover:text-muted-foreground">
+          Dataweb IA pode cometer erros. Verifique informações importantes.
+        </p>
+
+        {charCount > 0 && (
+          <span
+            className={cn(
+              "text-[11px] font-mono font-medium tabular-nums transition-colors duration-200",
+              isOverLimit
+                ? "text-destructive"
+                : charCount > MAX_CHARS * 0.9
+                ? "text-amber-500"
+                : "text-muted-foreground/50"
+            )}
+          >
+            {charCount}/{MAX_CHARS}
+          </span>
+        )}
+      </div>
     </div>
   );
 }

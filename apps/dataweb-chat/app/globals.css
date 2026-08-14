@@ -120,4 +120,23 @@
   .scrollbar-thin::-webkit-scrollbar-thumb:hover {
     background-color: hsl(var(--muted-foreground) / 0.4);
   }
+
+  /* Prose para conteúdo Markdown dentro dos balões do chat */
+  .prose-chat {
+    word-break: break-word;
+  }
+
+  .prose-chat > *:first-child {
+    margin-top: 0;
+  }
+
+  .prose-chat > *:last-child {
+    margin-bottom: 0;
+  }
+}
+
+/* Seleção de texto com cor da marca Diniz */
+::selection {
+  background-color: hsl(var(--primary) / 0.2);
+  color: inherit;
 }

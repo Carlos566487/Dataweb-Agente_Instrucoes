@@ -80,3 +80,16 @@ Contém todo o insumo de texto utilizado para basear (fazer o *grounding*) do ag
 ## 🎨 Design System
 
 O Front-end incorpora o **Design Diniz** através de variáveis HSL customizadas, integrando a cor primária `diniz-red (#DC2626)`. Os componentes foram estruturados com foco na experiência e no requinte visual (sombreados refinados, *backdrop-blur* nas barras superiores, animações discretas ao pairar o mouse), garantindo uma navegação "Premium".
+
+---
+
+## 🚀 Como Fazer o Deploy
+
+O projeto está pronto para deploy imediato em plataformas que suportam Next.js, como **Netlify** ou **Vercel**.
+Este repositório já inclui um arquivo de configuração `netlify.toml` na raiz, otimizado para o app `dataweb-chat`.
+
+**Deploy no Netlify:**
+1. Conecte este repositório no painel do Netlify.
+2. Nas configurações de deploy, as variáveis do `netlify.toml` já devem apontar o base directory para `apps/dataweb-chat`.
+3. Adicione as variáveis de ambiente necessárias (descritas no arquivo `.env.local.example`) nas **Environment Variables** do site.
+4. Faça o deploy!
